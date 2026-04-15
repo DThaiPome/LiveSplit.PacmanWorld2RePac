@@ -60,6 +60,12 @@ async fn main() {
                         watchers.load_ui_progress.pair.unwrap_or(Pair::default());
                     let player_state_pair = watchers.player_state.pair.unwrap_or_default();
 
+
+                    // Reset goal flag
+                    if !(timer::state() == TimerState::Running || timer::state() == TimerState::Paused) {
+                        il_series_first_goal_clear = false;
+                    }
+
                     match settings.timer_mode.current {
                         TimerMode::FullGame => {
                             if is_loading_pair.current
@@ -102,20 +108,23 @@ async fn main() {
                                 timer::resume_game_time();
                             }
                             
-                            enable_il_restart = enable_reset_il(&watchers);
+                            if enable_reset_il(&watchers) {
+                                enable_il_restart = true;
+                            }
 
-                            if player_gained_control(&watchers) && enable_il_restart
+                            // Only reset on level start if the player hasn't completed a level yet in this run.
+                            if player_gained_control(&watchers) && enable_il_restart && !il_series_first_goal_clear
                             {
-                                if settings.reset_on_level_start && !il_series_first_goal_clear {
+                                if settings.reset_on_level_start {
                                     timer::reset();
                                     timer::resume_game_time();
                                 }
                                 if settings.start_il {
                                     if timer::state() != TimerState::Running {
+                                        asr::print_message("STARTING TIMER!!!");
                                         timer::start();
                                         timer::set_game_time(Duration::seconds(0));
                                     }
-                                    il_series_first_goal_clear = false;
                                 }
                                 enable_il_restart = false;
                             }
@@ -133,7 +142,9 @@ async fn main() {
                         TimerMode::IL => {
                             let checkpoint_pair = watchers.checkpoint.pair.unwrap_or_default();
                             let boss_phase_pair = watchers.boss_state.pair.unwrap_or_default();
-                            enable_il_restart = enable_reset_il(&watchers);
+                            if enable_reset_il(&watchers) {
+                                enable_il_restart = true;
+                            }
 
                             if player_gained_control(&watchers) && enable_il_restart
                             {
