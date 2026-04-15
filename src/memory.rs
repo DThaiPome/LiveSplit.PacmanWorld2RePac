@@ -222,7 +222,7 @@ pub fn update_watchers(
                 asr::timer::set_variable_int("Boss State", boss_state);
             }
         }
-        TimerMode::FullGame | TimerMode::Multilevel => {
+        TimerMode::FullGame | TimerMode::ILSeries => {
             // get the loading animation progress from the UI for a more accurate (normal) level start time
             let loading_ui_add_res = addresses.loadscreen_ui_pointer.deref::<u64>(
                 game,

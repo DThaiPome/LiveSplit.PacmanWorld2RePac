@@ -35,6 +35,8 @@ async fn main() {
                 let mut last_time_trial_split_time: f64 = 0.;
                 let mut highest_boss_phase_split = 0;
 
+                let mut il_series_first_goal_clear = false;
+
                 let mut time_trial_marathon_timer_acum: f64 = 0.;
                 let mut restarting_level = false;
 
@@ -89,38 +91,51 @@ async fn main() {
                                 timer::split();
                                 enable_level_split = false;
                             }
-                        }
-                        TimerMode::IL | TimerMode::Multilevel => {
-                            let stage_state_pair = watchers.stage_state.pair.unwrap_or_default();
-                            let checkpoint_pair = watchers.checkpoint.pair.unwrap_or_default();
-                            let boss_phase_pair = watchers.boss_state.pair.unwrap_or_default();
+                        },
+                        TimerMode::ILSeries => {
+                            if is_loading_pair.current
+                                || (load_ui_progress_pair.current > 0.0
+                                    && load_ui_progress_pair.current < 1.0)
+                            {
+                                timer::pause_game_time();
+                            } else {
+                                timer::resume_game_time();
+                            }
+                            
+                            enable_il_restart = enable_reset_il(&watchers);
 
-                            // 3 cases that enable timer start:
-                            // * restart from menu while player is not dead and checkpoint is -1 (works on stage start before checkpoints)
-                            // * checkpoint returns to -1 while stage state is "pac dead"
-                            // * start from level select
-                            // TODO fix submarine levels
-                            // MULTILEVEL MODE: Only allow start on level entry
-                            let player_restarted_from_pause = stage_state_pair.old == StageState::Pause
-                                && stage_state_pair.current == StageState::PacDead
-                                && player_state_pair.current != PlayerState::Dead
-                                && checkpoint_pair.current == -1;
-                            let player_died_at_start = checkpoint_pair.changed()
-                                    && checkpoint_pair.current == -1
-                                    && stage_state_pair.current == StageState::PacDead;
-                            let player_entered_from_level_select = player_state_pair.old == PlayerState::StageInit
-                                    && (player_state_pair.current == PlayerState::Control
-                                        || player_state_pair.current == PlayerState::Shooting);
-                            enable_il_restart = player_entered_from_level_select;
-                            if settings.timer_mode.current == TimerMode::IL {
-                                enable_il_restart |= player_restarted_from_pause || player_died_at_start
+                            if player_gained_control(&watchers) && enable_il_restart
+                            {
+                                if settings.reset_on_level_start && !il_series_first_goal_clear {
+                                    timer::reset();
+                                    timer::resume_game_time();
+                                }
+                                if settings.start_il {
+                                    if timer::state() != TimerState::Running {
+                                        timer::start();
+                                        timer::set_game_time(Duration::seconds(0));
+                                    }
+                                    il_series_first_goal_clear = false;
+                                }
+                                enable_il_restart = false;
                             }
 
-                            if ((player_state_pair.old != PlayerState::Control
-                                && player_state_pair.current == PlayerState::Control)
-                                || player_state_pair.old != PlayerState::Shooting
-                                    && player_state_pair.current == PlayerState::Shooting)
-                                && enable_il_restart
+                            let hit_goal = player_hit_goal(&watchers);
+                            if hit_goal {
+                                il_series_first_goal_clear = true;
+                            }
+                            let split_on_level_end = settings.split_il && hit_goal;
+                            if split_on_level_end || split_final_boss(&watchers, &settings)
+                            {
+                                timer::split();
+                            }
+                        }
+                        TimerMode::IL => {
+                            let checkpoint_pair = watchers.checkpoint.pair.unwrap_or_default();
+                            let boss_phase_pair = watchers.boss_state.pair.unwrap_or_default();
+                            enable_il_restart = enable_reset_il(&watchers);
+
+                            if player_gained_control(&watchers) && enable_il_restart
                             {
                                 if settings.reset_on_level_start {
                                     timer::reset();
@@ -136,15 +151,11 @@ async fn main() {
                                 enable_il_restart = false;
                             }
 
-                            if player_state_pair.current != player_state_pair.old
-                                && player_state_pair.current == PlayerState::Goal
-                                && settings.split_il
+                            if player_hit_goal(&watchers) && settings.split_il
                             {
-                                if (settings.timer_mode.current == TimerMode::IL) {
-                                    // JANK SOLUTION to finish the run even when there are splits pending from skipping checkpoints
-                                    for _ in 0..100 {
-                                        timer::skip_split();
-                                    }
+                                // JANK SOLUTION to finish the run even when there are splits pending from skipping checkpoints
+                                for _ in 0..100 {
+                                    timer::skip_split();
                                 }
                                 // end run :)
                                 timer::split();
@@ -312,8 +323,8 @@ pub enum TimerMode {
     FullGame,
     /// Individual Level
     IL,
-    /// Multilevel Misc.
-    Multilevel,
+    /// Individual Level Series
+    ILSeries,
     /// Time Trial
     TimeTrial,
     /// Time Trial Marathon
@@ -339,10 +350,6 @@ struct Settings {
     #[default = true]
     start_il: bool,
 
-    /// Multilevel Start
-    #[default = true]
-    start_ml: bool,
-
     /// Split Options
     _title_split: Title,
 
@@ -367,6 +374,8 @@ struct Settings {
     split_il: bool,
 
     /// Individual Level Boss Phase
+    /// 
+    /// Not supported for Individual Level Series
     #[default = false]
     split_boss_phase: bool,
 
@@ -374,6 +383,7 @@ struct Settings {
     ///
     /// You will need the same number of splits before the final one and checkpoints.
     /// For example, "Butane Pain" has 8 checkpoints, so you will need 9 total splits for optimal use.
+    /// Not supported for Individual Level Series
     #[default = false]
     split_checkpoint: bool,
 
@@ -503,6 +513,15 @@ fn split_full_game(watchers: &Watchers, settings: &Settings, level_split_enabled
         }
     };
 
+    split_final_boss(watchers, settings)
+}
+
+fn split_final_boss(watchers: &Watchers, settings: &Settings) -> bool {
+    let level_pair = watchers.level_id.pair.unwrap_or_default();
+    _split_final_boss(watchers, settings, level_pair)
+}
+
+fn _split_final_boss(watchers: &Watchers, settings: &Settings, level_pair: Pair<GameStage>) -> bool {
     // spooky qte final split
     let spooky_pair = watchers.spooky_qte_success.pair.unwrap_or_default();
     if spooky_pair.changed() && spooky_pair.current && settings.split_spooky_qte {
@@ -515,6 +534,41 @@ fn split_full_game(watchers: &Watchers, settings: &Settings, level_split_enabled
         && boss_state_pair.current == 4
         && level_pair.current == GameStage::Stage6_5
         && settings.split_tocman
+}
+
+fn enable_reset_il(watchers: &Watchers) -> bool {
+    // 3 cases that enable timer start:
+    // * restart from menu while player is not dead and checkpoint is -1 (works on stage start before checkpoints)
+    // * checkpoint returns to -1 while stage state is "pac dead"
+    // * start from level select
+    // TODO fix submarine levels
+    let player_state_pair = watchers.player_state.pair.unwrap_or_default();
+    let stage_state_pair = watchers.stage_state.pair.unwrap_or_default();
+    let checkpoint_pair = watchers.checkpoint.pair.unwrap_or_default();
+    return (stage_state_pair.old == StageState::Pause
+        && stage_state_pair.current == StageState::PacDead
+        && player_state_pair.current != PlayerState::Dead
+        && checkpoint_pair.current == -1)
+        || (checkpoint_pair.changed()
+            && checkpoint_pair.current == -1
+            && stage_state_pair.current == StageState::PacDead)
+        || (player_state_pair.old == PlayerState::StageInit
+            && (player_state_pair.current == PlayerState::Control
+                || player_state_pair.current == PlayerState::Shooting));
+}
+
+fn player_gained_control(watchers: &Watchers) -> bool {
+    let player_state_pair = watchers.player_state.pair.unwrap_or_default();
+    return (player_state_pair.old != PlayerState::Control
+        && player_state_pair.current == PlayerState::Control)
+        || player_state_pair.old != PlayerState::Shooting
+            && player_state_pair.current == PlayerState::Shooting;
+}
+
+fn player_hit_goal(watchers: &Watchers) -> bool {
+    let player_state_pair = watchers.player_state.pair.unwrap_or_default();
+    return player_state_pair.current != player_state_pair.old
+        && player_state_pair.current == PlayerState::Goal;
 }
 
 fn enable_full_game_level_splits(watchers: &Watchers) -> bool {
