@@ -130,7 +130,7 @@ async fn main() {
                             }
 
                             let hit_goal = player_hit_goal(&watchers);
-                            if hit_goal {
+                            if hit_goal || beat_spooky(&watchers) || beat_toc_man(&watchers) {
                                 il_series_first_goal_clear = true;
                             }
                             let split_on_level_end = settings.split_il && hit_goal;
@@ -528,23 +528,26 @@ fn split_full_game(watchers: &Watchers, settings: &Settings, level_split_enabled
 }
 
 fn split_final_boss(watchers: &Watchers, settings: &Settings) -> bool {
-    let level_pair = watchers.level_id.pair.unwrap_or_default();
-    _split_final_boss(watchers, settings, level_pair)
-}
-
-fn _split_final_boss(watchers: &Watchers, settings: &Settings, level_pair: Pair<GameStage>) -> bool {
     // spooky qte final split
-    let spooky_pair = watchers.spooky_qte_success.pair.unwrap_or_default();
-    if spooky_pair.changed() && spooky_pair.current && settings.split_spooky_qte {
+    if beat_spooky(watchers) && settings.split_spooky_qte {
         return true;
     }
 
     // tocman defeat split
+    beat_toc_man(watchers) && settings.split_tocman
+}
+
+fn beat_spooky(watchers: &Watchers) -> bool {
+    let spooky_pair = watchers.spooky_qte_success.pair.unwrap_or_default();
+    return spooky_pair.changed() && spooky_pair.current;
+}
+
+fn beat_toc_man(watchers: &Watchers) -> bool {
+    let level_pair = watchers.level_id.pair.unwrap_or_default();
     let boss_state_pair = watchers.boss_state.pair.unwrap_or_default();
-    boss_state_pair.changed()
+    return boss_state_pair.changed()
         && boss_state_pair.current == 4
-        && level_pair.current == GameStage::Stage6_5
-        && settings.split_tocman
+        && level_pair.current == GameStage::Stage6_5;
 }
 
 fn enable_reset_il(watchers: &Watchers) -> bool {
