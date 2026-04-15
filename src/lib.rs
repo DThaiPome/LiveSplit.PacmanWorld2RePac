@@ -90,7 +90,7 @@ async fn main() {
                                 enable_level_split = false;
                             }
                         }
-                        TimerMode::IL => {
+                        TimerMode::IL | TimerMode::Multilevel => {
                             let stage_state_pair = watchers.stage_state.pair.unwrap_or_default();
                             let checkpoint_pair = watchers.checkpoint.pair.unwrap_or_default();
                             let boss_phase_pair = watchers.boss_state.pair.unwrap_or_default();
@@ -100,18 +100,20 @@ async fn main() {
                             // * checkpoint returns to -1 while stage state is "pac dead"
                             // * start from level select
                             // TODO fix submarine levels
-                            if (stage_state_pair.old == StageState::Pause
+                            // MULTILEVEL MODE: Only allow start on level entry
+                            let player_restarted_from_pause = stage_state_pair.old == StageState::Pause
                                 && stage_state_pair.current == StageState::PacDead
                                 && player_state_pair.current != PlayerState::Dead
-                                && checkpoint_pair.current == -1)
-                                || (checkpoint_pair.changed()
+                                && checkpoint_pair.current == -1;
+                            let player_died_at_start = checkpoint_pair.changed()
                                     && checkpoint_pair.current == -1
-                                    && stage_state_pair.current == StageState::PacDead)
-                                || (player_state_pair.old == PlayerState::StageInit
+                                    && stage_state_pair.current == StageState::PacDead;
+                            let player_entered_from_level_select = player_state_pair.old == PlayerState::StageInit
                                     && (player_state_pair.current == PlayerState::Control
-                                        || player_state_pair.current == PlayerState::Shooting))
-                            {
-                                enable_il_restart = true;
+                                        || player_state_pair.current == PlayerState::Shooting);
+                            enable_il_restart = player_entered_from_level_select;
+                            if settings.timer_mode.current == TimerMode::IL {
+                                enable_il_restart |= player_restarted_from_pause || player_died_at_start
                             }
 
                             if ((player_state_pair.old != PlayerState::Control
@@ -138,9 +140,11 @@ async fn main() {
                                 && player_state_pair.current == PlayerState::Goal
                                 && settings.split_il
                             {
-                                // JANK SOLUTION to finish the run even when there are splits pending from skipping checkpoints
-                                for _ in 0..100 {
-                                    timer::skip_split();
+                                if (settings.timer_mode.current == TimerMode::IL) {
+                                    // JANK SOLUTION to finish the run even when there are splits pending from skipping checkpoints
+                                    for _ in 0..100 {
+                                        timer::skip_split();
+                                    }
                                 }
                                 // end run :)
                                 timer::split();
@@ -308,6 +312,8 @@ pub enum TimerMode {
     FullGame,
     /// Individual Level
     IL,
+    /// Multilevel Misc.
+    Multilevel,
     /// Time Trial
     TimeTrial,
     /// Time Trial Marathon
@@ -332,6 +338,10 @@ struct Settings {
     /// Individual Level
     #[default = true]
     start_il: bool,
+
+    /// Multilevel Start
+    #[default = true]
+    start_ml: bool,
 
     /// Split Options
     _title_split: Title,
