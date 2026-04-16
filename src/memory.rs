@@ -263,7 +263,7 @@ pub fn update_watchers(
                 );
             }
 
-            if level_id == GameStage::Stage6_5 && settings.split_tocman {
+            if level_id == GameStage::Stage6_5 {
                 let boss_state = get_boss_state(game, addresses, &level_id);
                 watchers.boss_state.update_infallible(boss_state);
                 asr::timer::set_variable_int("Boss State", boss_state);

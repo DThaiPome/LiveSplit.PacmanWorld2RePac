@@ -115,16 +115,18 @@ async fn main() {
                             }
 
                             // Only reset on level start if the player hasn't completed a level yet in this run.
-                            if player_gained_control(&watchers) && enable_il_restart && !il_series_first_goal_clear
+                            if player_gained_control(&watchers) && enable_il_restart
                             {
-                                if settings.reset_on_level_start {
-                                    timer::reset();
-                                    timer::resume_game_time();
-                                }
-                                if settings.start_il {
-                                    if timer::state() != TimerState::Running {
-                                        timer::start();
-                                        timer::set_game_time(Duration::seconds(0));
+                                if !il_series_first_goal_clear {
+                                    if settings.reset_on_level_start {
+                                        timer::reset();
+                                        timer::resume_game_time();
+                                    }
+                                    if settings.start_il {
+                                        if timer::state() != TimerState::Running {
+                                            timer::start();
+                                            timer::set_game_time(Duration::seconds(0));
+                                        }
                                     }
                                 }
                                 enable_il_restart = false;
