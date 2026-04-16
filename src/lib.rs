@@ -35,6 +35,8 @@ async fn main() {
                 let mut last_time_trial_split_time: f64 = 0.;
                 let mut highest_boss_phase_split = 0;
 
+                // Track whether the player has cleared a level in an IL series.
+                // Prevents resetting the run once the player enters their second level or later.
                 let mut il_series_first_goal_clear = false;
 
                 let mut time_trial_marathon_timer_acum: f64 = 0.;
@@ -134,7 +136,7 @@ async fn main() {
                             if hit_goal || beat_spooky(&watchers) || beat_toc_man(&watchers) {
                                 il_series_first_goal_clear = true;
                             }
-                            
+
                             let split_on_level_end = settings.split_il && hit_goal;
                             if split_on_level_end || split_final_boss(&watchers, &settings)
                             {
