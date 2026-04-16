@@ -121,7 +121,6 @@ async fn main() {
                                 }
                                 if settings.start_il {
                                     if timer::state() != TimerState::Running {
-                                        asr::print_message("STARTING TIMER!!!");
                                         timer::start();
                                         timer::set_game_time(Duration::seconds(0));
                                     }
@@ -129,10 +128,13 @@ async fn main() {
                                 enable_il_restart = false;
                             }
 
+                            // Check if the player finished a level.
+                            // After this, we no longer reset runs on level start.
                             let hit_goal = player_hit_goal(&watchers);
                             if hit_goal || beat_spooky(&watchers) || beat_toc_man(&watchers) {
                                 il_series_first_goal_clear = true;
                             }
+                            
                             let split_on_level_end = settings.split_il && hit_goal;
                             if split_on_level_end || split_final_boss(&watchers, &settings)
                             {
